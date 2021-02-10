@@ -23,7 +23,7 @@
       </router-link>
     </header>
 
-    <div class="pb-1">
+    <!-- <div class="pb-1">
       <section class="hero is-small is-primary">
         <div class="hero-body ml-2">
           <p class="title">
@@ -31,7 +31,7 @@
           </p>
         </div>
       </section>
-    </div>
+    </div> -->
 
     <div class="container is-fluid">
       <router-view />
@@ -54,7 +54,7 @@
 </template>
 
 <style>
-@import "../node_modules/bulma/css/bulma.css";
-@import "../node_modules/bulma-tooltip";
-@import "./assets/css/custom.css";
+@import '../node_modules/bulma/css/bulma.css';
+@import '../node_modules/bulma-tooltip';
+@import './assets/css/custom.css';
 </style>

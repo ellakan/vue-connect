@@ -1,20 +1,37 @@
 <template>
   <div>
-    <div class="box">
-      <button
-        v-on:click="reload()"
-        v-bind:class="[isLoading != `` ? `is-loading` : ``]"
-        class="button"
-      >
-        <font-awesome-icon icon="sync-alt"></font-awesome-icon>
-      </button>
+    <div class="box notification is-primary">
+      <div class="columns">
+        <div class="column">
+          <p class="title">
+            {{ $route.name }}
+          </p>
+        </div>
+        <div class="column is-two-thirds">
+          <input
+            class="input is-primary is-rounded"
+            type="text"
+            placeholder="Name"
+            v-model="searchText"
+          />
+        </div>
+        <div class="column">
+          <button
+            v-on:click="reload()"
+            v-bind:class="[isLoading != `` ? `is-loading` : ``]"
+            class="button"
+          >
+            <font-awesome-icon icon="sync-alt"></font-awesome-icon>
+          </button>
+        </div>
+      </div>
     </div>
 
     <div class="box">
       <error-message :error="errors"></error-message>
 
       <div class="table-container is-size-7">
-        <table v-if="data.length > 0" class="table is-hoverable ">
+        <table v-if="filterdata.length > 0" class="table is-hoverable">
           <thead>
             <tr>
               <th>State</th>
@@ -24,7 +41,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="item in data" v-bind:key="item.name">
+            <tr v-for="item in filterdata" v-bind:key="item.name">
               <td>
                 <button
                   v-bind:class="item.connector.state"
@@ -192,10 +209,10 @@
 </template>
 
 <script>
-import connect from "../common/connect";
-import errorHandler from "../common/error";
-import ErrorMessage from "../components/ErrorMessage.vue";
-
+import connect from '../common/connect'
+import errorHandler from '../common/error'
+import ErrorMessage from '../components/ErrorMessage.vue'
+import { debounce } from 'lodash-es'
 /**
  * return sorted connector list
  * @param {*} connectors
@@ -203,69 +220,81 @@ import ErrorMessage from "../components/ErrorMessage.vue";
 function sortedConnectors(connectors) {
   let failedCollection = [],
     runningCollection = [],
-    pausedCollection = [];
+    pausedCollection = []
 
   for (let e of connectors) {
-    let isFailed = e.connector.state.toUpperCase() == "FAILED",
-      isPaused = e.connector.state.toUpperCase() == "PAUSED";
+    let isFailed = e.connector.state.toUpperCase() == 'FAILED',
+      isPaused = e.connector.state.toUpperCase() == 'PAUSED'
 
     for (let t of e.tasks) {
-      isFailed = isFailed || t.state.toUpperCase() == "FAILED";
-      isPaused = isPaused && t.state.toUpperCase() == "PAUSED";
+      isFailed = isFailed || t.state.toUpperCase() == 'FAILED'
+      isPaused = isPaused && t.state.toUpperCase() == 'PAUSED'
     }
     // First show failed
     if (isFailed) {
-      failedCollection.push(e);
-      continue;
+      failedCollection.push(e)
+      continue
     }
     // Last show paused
     if (isPaused) {
-      pausedCollection.push(e);
-      continue;
+      pausedCollection.push(e)
+      continue
     }
-    runningCollection.push(e);
+    runningCollection.push(e)
   }
 
-  return [...failedCollection, ...runningCollection, ...pausedCollection];
+  return [...failedCollection, ...runningCollection, ...pausedCollection]
 }
 
 function loadData() {
-  this.isLoading = `status`;
-  this.errors = null;
+  this.isLoading = `status`
+  this.errors = null
 
   connect
     .getAllConnectorStatus()
     .then((response) => {
-      this.data = sortedConnectors(response.data);
-      this.isLoading = "";
+      if (this.searchText != '') {
+        this.data = response.data.filter(
+          (s) =>
+            s.name.toLowerCase().indexOf(this.searchText.toLowerCase()) >= 0
+        )
+        this.data = sortedConnectors(this.data)
+        this.filterdata = this.data
+      } else {
+        this.data = sortedConnectors(response.data)
+        this.filterdata = this.data
+      }
+
+      this.isLoading = ''
     })
     .catch((e) => {
       // check if there is cached state in error response
       if (e.response && e.response.data.cache) {
-        this.data = sortedConnectors(e.response.data.cache);
+        this.data = sortedConnectors(e.response.data.cache)
+        this.filterdata = this.data
       }
-      this.errors = errorHandler.transform(e);
-      this.isLoading = "";
-    });
+      this.errors = errorHandler.transform(e)
+      this.isLoading = ''
+    })
 }
 
 function runConnectOperation(operation, operationName, connectorId, taskId) {
   if (taskId != null) {
-    this.isLoading = `${operationName}-${connectorId}-${taskId}`;
+    this.isLoading = `${operationName}-${connectorId}-${taskId}`
   } else {
-    this.isLoading = `${operationName}-${connectorId}`;
+    this.isLoading = `${operationName}-${connectorId}`
   }
 
-  this.errors = null;
+  this.errors = null
   operation(connectorId, taskId)
     .then((resp) => {
-      this.data = sortedConnectors(resp.data);
-      this.isLoading = "";
+      this.data = sortedConnectors(resp.data)
+      this.isLoading = ''
     })
     .catch((e) => {
-      this.errors = errorHandler.transform(e);
-      this.isLoading = "";
-    });
+      this.errors = errorHandler.transform(e)
+      this.isLoading = ''
+    })
 }
 
 export default {
@@ -275,74 +304,87 @@ export default {
       data: [],
       errors: null,
       polling: null,
-      isLoading: "",
-    };
+      isLoading: '',
+      searchText: '',
+      filterdata: [],
+    }
   },
-
+  watch: {
+    searchText: debounce(function (text) {
+      this.updateSearchText(text.toLowerCase())
+    }, 300),
+  },
   // Fetches posts when the component is created.
   created() {
-    loadData.bind(this)();
+    loadData.bind(this)()
 
     this.polling = setInterval(
-      function() {
+      function () {
         connect
           .pollConnectorStatus()
           .then((response) => {
             if (response.data.state != null && response.data.state.length > 0) {
-              this.data = sortedConnectors(response.data.state);
+              this.data = sortedConnectors(response.data.state)
               if (response.data.isConnectUp) {
                 // connect is running again
-                this.errors = null;
+                this.errors = null
               }
               if (!response.data.isConnectUp && this.errors == null) {
                 // set error from cache
-                this.errors = { message: response.data.message };
+                this.errors = { message: response.data.message }
               }
             }
           })
           .catch((e) => {
-            this.errors = errorHandler.transform(e);
-          });
+            this.errors = errorHandler.transform(e)
+          })
       }.bind(this),
       10000
-    );
+    )
   },
 
   beforeDestroy() {
-    clearInterval(this.polling);
+    clearInterval(this.polling)
   },
 
   methods: {
     reload() {
-      loadData.bind(this)();
+      loadData.bind(this)()
     },
 
-    detail: function(id) {
-      this.$router.push("/detail/" + id);
+    detail: function (id) {
+      this.$router.push('/detail/' + id)
     },
-    edit: function(id) {
-      this.$router.push("/edit/" + id);
+    edit: function (id) {
+      this.$router.push('/edit/' + id)
     },
-    del: function(id) {
-      runConnectOperation.bind(this)(connect.deleteConnector, "delete", id);
+    del: function (id) {
+      runConnectOperation.bind(this)(connect.deleteConnector, 'delete', id)
     },
-    restart: function(id) {
-      runConnectOperation.bind(this)(connect.restartConnector, "restart", id);
+    restart: function (id) {
+      runConnectOperation.bind(this)(connect.restartConnector, 'restart', id)
     },
-    pause: function(id) {
-      runConnectOperation.bind(this)(connect.pauseConnector, "pause", id);
+    pause: function (id) {
+      runConnectOperation.bind(this)(connect.pauseConnector, 'pause', id)
     },
-    resume: function(id) {
-      runConnectOperation.bind(this)(connect.resumeConnector, "resume", id);
+    resume: function (id) {
+      runConnectOperation.bind(this)(connect.resumeConnector, 'resume', id)
     },
-    restartTask: function(id, task_id) {
+    restartTask: function (id, task_id) {
       runConnectOperation.bind(this)(
         connect.restartTask,
-        "restart",
+        'restart',
         id,
         task_id
-      );
+      )
+    },
+    updateSearchText(text) {
+      this.filterdata = this.data.filter((s) => {
+        console.log('name==' + s.name)
+        console.log(s.name.indexOf(text))
+        return s.name.toLowerCase().indexOf(text) >= 0
+      })
     },
   },
-};
+}
 </script>
